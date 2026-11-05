@@ -154,8 +154,70 @@ app.patch('/api/orders/:id/status', async (c) => {
 	}, 409);
 });
 
-app.post('/api/coffees/image', (c) => {
-	return c.json({ message: "Image uploaded successfully" });
+// ---------- Menu images (R2) ----------
+
+const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
+const MAX_IMAGE_BYTES = 2 * 1024 * 1024; // 2 MB
+
+// Upload a photo for one menu item.
+// Send the raw image bytes as the body, with Content-Type set to the image type.
+app.post('/api/coffees/:id/image', async (c) => {
+	const id = parseId(c.req.param('id'));
+	if (id === null) {
+		return c.json({ error: 'Menu item id must be a positive integer' }, 400);
+	}
+
+	const item = await c.env.DB
+		.prepare('SELECT id FROM menu_items WHERE id = ?')
+		.bind(id)
+		.first();
+
+	if (!item) {
+		return c.json({ error: `Menu item ${id} not found` }, 404);
+	}
+
+	// "image/jpeg; charset=..." -> "image/jpeg"
+	const contentType = (c.req.header('Content-Type') ?? '').split(';')[0].trim().toLowerCase();
+	if (!ALLOWED_IMAGE_TYPES.includes(contentType)) {
+		return c.json({ error: `Content-Type must be one of: ${ALLOWED_IMAGE_TYPES.join(', ')}` }, 400);
+	}
+
+	// Content-Length lets us refuse a big file before reading it.
+	// We still check the real size after reading, because the header can be missing or wrong.
+	const declaredSize = Number(c.req.header('Content-Length') ?? 0);
+	if (declaredSize > MAX_IMAGE_BYTES) {
+		return c.json({ error: 'Image must be 2 MB or smaller' }, 413);
+	}
+
+	const bytes = await c.req.arrayBuffer();
+	if (bytes.byteLength === 0) {
+		return c.json({ error: 'Request body is empty. Send the image bytes.' }, 400);
+	}
+	if (bytes.byteLength > MAX_IMAGE_BYTES) {
+		return c.json({ error: 'Image must be 2 MB or smaller' }, 413);
+	}
+
+	// A random name means a new upload never overwrites an old file.
+	const key = `menu/${id}/${crypto.randomUUID()}`;
+
+	await c.env.MENU_IMAGES.put(key, bytes, {
+		httpMetadata: { contentType },
+	});
+
+	// R2 and D1 are separate, so we can't update both in one transaction.
+	// If saving the key in D1 fails, delete the file we just uploaded so it isn't left behind.
+	try {
+		await c.env.DB
+			.prepare('UPDATE menu_items SET image_key = ? WHERE id = ?')
+			.bind(key, id)
+			.run();
+	} catch (err) {
+		await c.env.MENU_IMAGES.delete(key);
+		console.error('Saving image_key failed, deleted R2 object', key, err);
+		return c.json({ error: 'Could not save the image. Please try again.' }, 500);
+	}
+
+	return c.json({ id, imageKey: key, contentType, size: bytes.byteLength }, 201);
 });
 export default app;
 

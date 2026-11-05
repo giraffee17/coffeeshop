@@ -34,6 +34,12 @@
 			"migrations_dir": "migrations"
 		}
 	],
+	"r2_buckets": [
+		{
+			"binding": "MENU_IMAGES",
+			"bucket_name": "coffee-menu"
+		}
+	],
 	"observability": {
 		"enabled": true
 	},

@@ -6,6 +6,28 @@
 GET {{api}}/coffees
 
 
+### ---------- Menu images (R2) ----------
+
+### Upload latte.jpg as the photo for item 1 (201, returns the new imageKey)
+### "< ./latte.jpg" sends the file's bytes as the body (path is relative to this file).
+POST {{api}}/coffees/1/image
+Content-Type: image/jpeg
+
+< ./latte.jpg
+
+### Wrong file type (400)
+POST {{api}}/coffees/1/image
+Content-Type: text/plain
+
+this is not an image
+
+### Menu item does not exist (404)
+POST {{api}}/coffees/999/image
+Content-Type: image/jpeg
+
+< ./latte.jpg
+
+
 ### ---------- Place an order ----------
 
 ### Place an order for item 1 (201, returns the saved order)
