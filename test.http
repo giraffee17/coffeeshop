@@ -1,2 +1,97 @@
-###
-GET http://localhost:8501/api/coffees
+@api = http://localhost:8501/api
+
+### ---------- Menu ----------
+
+### List active menu items (200)
+GET {{api}}/coffees
+
+
+### ---------- Place an order ----------
+
+### Place an order for item 1 (201, returns the saved order)
+POST {{api}}/orders
+Content-Type: application/json
+
+{ "itemId": 1 }
+
+### itemId is not an integer (400)
+POST {{api}}/orders
+Content-Type: application/json
+
+{ "itemId": "1" }
+
+### Missing body / invalid JSON (400)
+POST {{api}}/orders
+Content-Type: application/json
+
+not json
+
+### Item does not exist (404)
+POST {{api}}/orders
+Content-Type: application/json
+
+{ "itemId": 999 }
+
+
+### ---------- Check an order ----------
+
+### Get order 1 (200)
+GET {{api}}/orders/1
+
+### Order does not exist (404)
+GET {{api}}/orders/999
+
+### Bad order id (400)
+GET {{api}}/orders/abc
+
+
+### ---------- Move an order along ----------
+### Order: received -> preparing -> ready -> collected
+### Send these one at a time, top to bottom.
+
+### received -> preparing (200)
+PATCH {{api}}/orders/1/status
+Content-Type: application/json
+
+{ "expectedStatus": "received" }
+
+### Send "received" again: order already moved on (409)
+PATCH {{api}}/orders/1/status
+Content-Type: application/json
+
+{ "expectedStatus": "received" }
+
+### preparing -> ready (200)
+PATCH {{api}}/orders/1/status
+Content-Type: application/json
+
+{ "expectedStatus": "preparing" }
+
+### ready -> collected (200)
+PATCH {{api}}/orders/1/status
+Content-Type: application/json
+
+{ "expectedStatus": "ready" }
+
+### "collected" is the last step, there is no next status (400)
+PATCH {{api}}/orders/1/status
+Content-Type: application/json
+
+{ "expectedStatus": "collected" }
+
+### Order does not exist (404)
+PATCH {{api}}/orders/999/status
+Content-Type: application/json
+
+{ "expectedStatus": "received" }
+
+
+### ---------- CORS check ----------
+
+### Preflight like the browser sends before a PATCH from the page (204)
+### Look for Access-Control-Allow-Methods (includes PATCH) and
+### Access-Control-Allow-Headers (includes Content-Type) in the response headers.
+OPTIONS {{api}}/orders/1/status
+Origin: http://localhost:8500
+Access-Control-Request-Method: PATCH
+Access-Control-Request-Headers: Content-Type

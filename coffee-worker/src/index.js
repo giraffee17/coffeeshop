@@ -7,8 +7,8 @@ app.use(
 	'/api/*',
 	cors({
 		origin: ['http://localhost:8500'],
-		allowHeaders: ['X-Custom-Header', 'Upgrade-Insecure-Requests'],
-		allowMethods: ['POST', 'GET', 'OPTIONS'],
+		allowHeaders: ['X-Custom-Header', 'Upgrade-Insecure-Requests', 'Content-Type'],
+		allowMethods: ['POST', 'GET', 'PATCH', 'OPTIONS'],
 		exposeHeaders: ['Content-Length', 'X-Kuma-Revision'],
 		maxAge: 600,
 		credentials: true,
@@ -35,6 +35,123 @@ app.get('/api/coffees', async (c) => {
 	}));
 
 	return c.json(coffees);
+});
+
+// ---------- Orders ----------
+
+// The only allowed moves: each status points to the one that comes after it.
+const NEXT_STATUS = {
+	received: 'preparing',
+	preparing: 'ready',
+	ready: 'collected',
+};
+
+const ORDER_COLUMNS = 'id, item_id, status, created_at';
+
+// Read the JSON body. Returns null if the body is missing or not valid JSON.
+async function readJson(c) {
+	try {
+		return await c.req.json();
+	} catch {
+		return null;
+	}
+}
+
+// URL params are always strings. Turn "12" into 12, or return null for "abc", "1.5", "-3".
+function parseId(value) {
+	return /^[0-9]+$/.test(value) ? Number(value) : null;
+}
+
+// Place a new order.  Body: { "itemId": 1 }
+app.post('/api/orders', async (c) => {
+	const body = await readJson(c);
+	const itemId = body?.itemId;
+
+	if (!Number.isInteger(itemId)) {
+		return c.json({ error: 'itemId must be an integer' }, 400);
+	}
+
+	const item = await c.env.DB
+		.prepare('SELECT id FROM menu_items WHERE id = ? AND active = ?')
+		.bind(itemId, 1)
+		.first();
+
+	if (!item) {
+		return c.json({ error: `Menu item ${itemId} not found` }, 404);
+	}
+
+	// RETURNING gives back the saved row, including the id and defaults the database filled in.
+	const order = await c.env.DB
+		.prepare(`INSERT INTO orders (item_id) VALUES (?) RETURNING ${ORDER_COLUMNS}`)
+		.bind(itemId)
+		.first();
+
+	return c.json(order, 201);
+});
+
+// Check an order.
+app.get('/api/orders/:id', async (c) => {
+	const id = parseId(c.req.param('id'));
+	if (id === null) {
+		return c.json({ error: 'Order id must be a positive integer' }, 400);
+	}
+
+	const order = await c.env.DB
+		.prepare(`SELECT ${ORDER_COLUMNS} FROM orders WHERE id = ?`)
+		.bind(id)
+		.first();
+
+	if (!order) {
+		return c.json({ error: `Order ${id} not found` }, 404);
+	}
+
+	return c.json(order);
+});
+
+// Move an order to its next status.  Body: { "expectedStatus": "received" }
+// expectedStatus is the status the caller thinks the order has right now.
+app.patch('/api/orders/:id/status', async (c) => {
+	const id = parseId(c.req.param('id'));
+	if (id === null) {
+		return c.json({ error: 'Order id must be a positive integer' }, 400);
+	}
+
+	const body = await readJson(c);
+	const expectedStatus = body?.expectedStatus;
+
+	if (typeof expectedStatus !== 'string' || !Object.hasOwn(NEXT_STATUS, expectedStatus)) {
+		return c.json({
+			error: `expectedStatus must be one of: ${Object.keys(NEXT_STATUS).join(', ')}`,
+		}, 400);
+	}
+
+	const nextStatus = NEXT_STATUS[expectedStatus];
+
+	// Only updates if the order still has the status the caller expected.
+	// If someone else already moved it, no row matches and we get null back.
+	const updated = await c.env.DB
+		.prepare(`UPDATE orders SET status = ? WHERE id = ? AND status = ? RETURNING ${ORDER_COLUMNS}`)
+		.bind(nextStatus, id, expectedStatus)
+		.first();
+
+	if (updated) {
+		return c.json(updated);
+	}
+
+	// Nothing was updated: either the order doesn't exist, or its status changed.
+	const current = await c.env.DB
+		.prepare('SELECT status FROM orders WHERE id = ?')
+		.bind(id)
+		.first();
+
+	if (!current) {
+		return c.json({ error: `Order ${id} not found` }, 404);
+	}
+
+	return c.json({
+		error: `Order ${id} is '${current.status}', not '${expectedStatus}'`,
+		currentStatus: current.status,
+	}, 409);
 });
 
 app.post('/api/coffees/image', (c) => {
