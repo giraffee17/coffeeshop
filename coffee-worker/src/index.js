@@ -6,7 +6,7 @@ const app = new Hono();
 app.use(
 	'/api/*',
 	cors({
-		origin: ['http://localhost:8500'],
+		origin: ['http://localhost:8500', 'http://127.0.0.1:8500'],
 		allowHeaders: ['X-Custom-Header', 'Upgrade-Insecure-Requests', 'Content-Type'],
 		allowMethods: ['POST', 'GET', 'PATCH', 'OPTIONS'],
 		exposeHeaders: ['Content-Length', 'X-Kuma-Revision'],
