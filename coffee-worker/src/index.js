@@ -15,14 +15,27 @@ app.use(
 	})
 )
 
-const coffees = [
-	{ name: 'Caffe Latte', price: '$4.50', description: 'Espresso softened with velvety steamed milk.', category: 'Hot coffee', image: 'https://images.unsplash.com/photo-1570968915860-54d5c301fa9f?auto=format&fit=crop&w=200&q=80' },
-	{ name: 'Iced Americano', price: '$3.50', description: 'Espresso, cool water, and a little room to unwind.', category: 'Iced coffee', image: 'https://images.unsplash.com/photo-1517701604599-bb29b565090c?auto=format&fit=crop&w=200&q=80' },
-	{ name: 'Cappuccino', price: '$4.50', description: 'Rich espresso beneath a light, airy milk foam.', category: 'Hot coffee', image: 'https://images.unsplash.com/photo-1534778101976-62847782c213?auto=format&fit=crop&w=200&q=80' },
-	{ name: 'Matcha Latte', price: '$5.00', description: 'Earthy matcha, gently whisked with steamed milk.', category: 'Non-coffee', image: 'https://images.unsplash.com/photo-1515823064-d6e0c04616a7?auto=format&fit=crop&w=200&q=80' }
-];
+// Turn 450 (cents) into "$4.50", the format the frontend already shows.
+const formatPrice = (cents) => `$${(cents / 100).toFixed(2)}`;
 
-app.get('/api/coffees', (c) =>  c.json(coffees));
+app.get('/api/coffees', async (c) => {
+	const { results } = await c.env.DB
+		.prepare('SELECT id, name, description, category, price_cents, image_url FROM menu_items WHERE active = ? ORDER BY id')
+		.bind(1)
+		.all();
+
+	// Rename the database columns to the field names the frontend expects.
+	const coffees = results.map((row) => ({
+		id: row.id,
+		name: row.name,
+		price: formatPrice(row.price_cents),
+		description: row.description,
+		category: row.category,
+		image: row.image_url,
+	}));
+
+	return c.json(coffees);
+});
 
 app.post('/api/coffees/image', (c) => {
 	return c.json({ message: "Image uploaded successfully" });
