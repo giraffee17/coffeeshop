@@ -27,6 +27,13 @@
 			"tag": "v1"
 		}
 	],
+	"d1_databases": [
+		{
+			"binding": "DB",
+			"database_name": "coffee-db",
+			"migrations_dir": "migrations"
+		}
+	],
 	"observability": {
 		"enabled": true
 	},
